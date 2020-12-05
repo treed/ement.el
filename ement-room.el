@@ -207,6 +207,7 @@ See Info node `(elisp)Other Display Specs'."
        (when (call-interactively #'ement-room-retro)
          (message "Loading earlier messages..."))))))
 
+(defvar ement-default-sync-filter)
 (defun ement-room-retro (session room number &optional buffer)
   ;; FIXME: Naming things is hard.
   "Retrieve NUMBER older messages in ROOM on SESSION."
@@ -218,13 +219,23 @@ See Info node `(elisp)Other Display Specs'."
   (unless ement-room-retro-loading
     (pcase-let* (((cl-struct ement-session server token) session)
                  ((cl-struct ement-room id prev-batch) room)
-                 (endpoint (format "rooms/%s/messages" (url-hexify-string id))))
+                 (endpoint (format "rooms/%s/messages" (url-hexify-string id)))
+                 (filter (cl-copy-list ement-default-sync-filter)))
+      (setf (alist-get 'include_redundant_members
+                       (alist-get 'state
+                                  (alist-get 'room filter)))
+            t
+            (alist-get 'include_redundant_members
+                       (alist-get 'timeline
+                                  (alist-get 'room filter)))
+            t)
       (ement-api server token endpoint
         (apply-partially #'ement-room-retro-callback room)
         :timeout 5
         :params (list (list "from" prev-batch)
                       (list "dir" "b")
-                      (list "limit" (number-to-string number)))
+                      (list "limit" (number-to-string number))
+                      (list "filter" (json-encode filter)))
         :else (lambda (&rest args)
                 (when buffer
                   (with-current-buffer buffer
