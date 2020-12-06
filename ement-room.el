@@ -210,6 +210,7 @@ See Info node `(elisp)Other Display Specs'."
 (defvar ement-default-sync-filter)
 (defun ement-room-retro (session room number &optional buffer)
   ;; FIXME: Naming things is hard.
+  ;; SPEC: <https://matrix.org/docs/spec/client_server/r0.6.1#get-matrix-client-r0-rooms-roomid-messages>.
   "Retrieve NUMBER older messages in ROOM on SESSION."
   (interactive (list ement-session ement-room
                      (if current-prefix-arg
@@ -220,15 +221,18 @@ See Info node `(elisp)Other Display Specs'."
     (pcase-let* (((cl-struct ement-session server token) session)
                  ((cl-struct ement-room id prev-batch) room)
                  (endpoint (format "rooms/%s/messages" (url-hexify-string id)))
-                 (filter (cl-copy-list ement-default-sync-filter)))
-      (setf (alist-get 'include_redundant_members
-                       (alist-get 'state
-                                  (alist-get 'room filter)))
-            t
-            (alist-get 'include_redundant_members
-                       (alist-get 'timeline
-                                  (alist-get 'room filter)))
-            t)
+                 (filter ;; (cl-copy-list ement-default-sync-filter)
+                  '((room (timeline (lazy_load_members . t)
+                                    (include_redundant_members . t))))
+                  ))
+      ;; (setf (alist-get 'include_redundant_members
+      ;;                  (alist-get 'state
+      ;;                             (alist-get 'room filter)))
+      ;;       t
+      ;;       (alist-get 'include_redundant_members
+      ;;                  (alist-get 'timeline
+      ;;                             (alist-get 'room filter)))
+      ;;       t)
       (ement-api server token endpoint
         (apply-partially #'ement-room-retro-callback room)
         :timeout 5
@@ -247,19 +251,36 @@ See Info node `(elisp)Other Display Specs'."
 (defun ement-room-retro-callback (room data)
   "Push new DATA to ROOM on SESSION and add events to room buffer."
   (pcase-let* (((cl-struct ement-room) room)
-	       ((map _start end chunk state) data)
+	       ((map _start end state chunk) data)
 	       (buffer (cl-loop for buffer in (buffer-list)
 				when (equal room (buffer-local-value 'ement-room buffer))
 				return buffer))
                (window) (point-node) (orig-first-node))
     ;; FIXME: These are pushed onto the front of the lists.  Doesn't
     ;; really matter, but maybe better to put them at the other end.
+
+    ;; NOTE: It appears that, contrary to the spec, the state
+    ;; parameter is always missing, and the events it should have are
+    ;; actually in the chunk parameter.  Commenting this out for now.
     (cl-loop for event across state
-	     ;; FIXME: Need to use make-event
-	     do (push event (ement-room-state room)))
+             ;; FIXME: Need to use make-event
+             do (push event (ement-room-state room)))
     (cl-loop for event across-ref chunk
+             ;; NOTE: This uses across-ref and setf as an optimization so the chunk vector can be
+             ;; reused to insert the events into the buffer (otherwise, it would have to push the
+             ;; events to the timeline* slot first and then move them to the timeslot afterward).
 	     do (setf event (ement--make-event event))
+             (ement-debug "Pushing chunk event" event)
 	     (push event (ement-room-timeline room)))
+    ;; Append apparent RoomStateEvents to the state slot as well.
+    ;; MAYBE: Don't also push them to the timeline slot.
+    (cl-loop for event across chunk
+             unless (equal "m.room.message" (ement-event-type event))
+	     do (display-warning 'ement "Non-message event in chunk: %S" event)
+             and collect event into state-events
+             finally do (setf (ement-room-state room)
+                              (append (ement-room-state room)
+                                      (nreverse state-events))))
     (when buffer
       (with-current-buffer buffer
         (setf window (get-buffer-window buffer)
