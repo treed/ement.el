@@ -53,7 +53,7 @@
 ;;;; Functions
 
 (cl-defun ement-api (server token endpoint then
-                            &key timeout data params
+                            &key timeout data params finally
                             (content-type "application/json")
                             (else #'ement-api-error) (method 'get)
                             (json-read-fn #'json-read))
@@ -72,7 +72,8 @@
     ;; function on the session object, which may be very large, it
     ;; will take a very long time to print into the warnings buffer.
     ;;  (ement-debug (current-time) method url headers)
-    (plz method url :headers headers :body data :as json-read-fn :then then :else else
+    (plz method url :headers headers :body data :as json-read-fn
+      :then then :else else :finally finally
       ;; FIXME: Timeout is not necessarily the same as connect-timeout, or shouldn't be.
       :connect-timeout timeout)))
 

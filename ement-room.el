@@ -241,10 +241,13 @@ See Info node `(elisp)Other Display Specs'."
                       (list "limit" (number-to-string number))
                       (list "filter" (json-encode filter)))
         :else (lambda (&rest args)
-                (when buffer
-                  (with-current-buffer buffer
-                    (setf ement-room-retro-loading nil)))
-                (signal 'error (format "Ement: loading earlier messages failed (%S)" args))))
+                (signal 'ement-api-error
+                        (format "Ement: loading earlier messages failed (%S)" args)))
+        :finally (when buffer
+                   (lambda ()
+                     (when (buffer-live-p buffer)
+                       (with-current-buffer buffer
+                         (setf ement-room-retro-loading nil))))))
       (setf ement-room-retro-loading t))))
 
 (declare-function ement--make-event "ement.el")
@@ -296,8 +299,7 @@ See Info node `(elisp)Other Display Specs'."
           (set-window-start nil (ewoc-location point-node))
           ;; FIXME: Experiment with this.
           (forward-line -1))
-        (setf (ement-room-prev-batch room) end
-              ement-room-retro-loading nil)))))
+        (setf (ement-room-prev-batch room) end)))))
 
 ;; FIXME: What is the best way to do this, with ement--sync being in another file?
 (declare-function ement--sync "ement.el")
