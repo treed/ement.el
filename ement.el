@@ -122,6 +122,13 @@ Each function is called with three arguments: the event, the
 room, and the session."
   :type 'hook)
 
+(defcustom ement-insecure nil
+  "Whether to ignore TLS errors.
+Useful, e.g. when connecting to a local proxy using a
+self-signed, untrusted certificate.  (Normally this option should
+not be used, of course.)"
+  :type 'boolean)
+
 ;;;; Commands
 
 ;;;###autoload
@@ -150,16 +157,17 @@ session and log in again."
           (call-interactively #'ement-connect)))
     ;; Log in to new session.
     (unless (string-match (rx bos "@" (group (1+ (not (any ":")))) ; Username
-                              ":" (group (optional (1+ (not (any blank)))))) ; Server name
+                              ":" (group (optional (1+ (not (any blank ":"))))) ; Server name
+                              (optional ":" (group (1+ digit)))) ; Port
                           user-id)
       (user-error "Invalid user ID format: use @USERNAME:SERVER"))
     (let* ((username (match-string 1 user-id))
            (server-name (match-string 2 user-id))
-           ;; TODO: Also return port, and actually use that port elsewhere.
-           (uri-prefix (ement--hostname-uri server-name))
+           (port (when (match-string 3 user-id)
+                   (string-to-number (match-string 3 user-id))))
+           (uri-prefix (ement--hostname-uri server-name port))
            (user (make-ement-user :id user-id :username username :room-display-names (make-hash-table)))
-           ;; FIXME: Dynamic port.
-           (server (make-ement-server :name server-name :port 443 :uri-prefix uri-prefix))
+           (server (make-ement-server :name server-name :port port :uri-prefix uri-prefix))
            ;; A new session with a new token should be able to start over with a transaction ID of 0.
            (transaction-id 0)
            (session (make-ement-session :user user :server server :transaction-id transaction-id)))
@@ -236,9 +244,10 @@ call `pop-to-buffer'."
   (or (not (ement-session-has-synced-p session))
       (not ement-auto-sync)))
 
-(defun ement--hostname-uri (hostname)
+(defun ement--hostname-uri (hostname &optional port)
   "Return the \".well-known\" URI for server HOSTNAME.
-If no URI is found, prompt the user for the hostname."
+If no URI is found, prompt the user for the hostname.  If PORT,
+use it, otherwise the default."
   ;; SPEC: <https://matrix.org/docs/spec/client_server/r0.6.1#id178> ("4.1   Well-known URI")
   (cl-labels ((fail-prompt
                () (let ((input (read-string "Auto-discovery of server's well-known URI failed.  Input server hostname, or leave blank to use server name: ")))
@@ -251,10 +260,14 @@ If no URI is found, prompt the user for the hostname."
                          (map-nested-elt object '(m.homeserver base_url))
                        ;; Parsing error: FAIL_PROMPT.
                        (fail-prompt))))
-    (let ((response (condition-case err
-                        (plz-get-sync (concat "https://" hostname "/.well-known/matrix/client")
-                          :as 'response)
-                      (plz-http-error (plz-error-response (cdr err))))))
+    (let* ((plz-curl-default-args (if ement-insecure
+                                      (cons "--insecure" plz-curl-default-args)
+                                    plz-curl-default-args))
+           (url (url-recreate-url
+                 (url-parse-make-urlobj "https" nil nil hostname port "/.well-known/matrix/client" nil nil t)))
+           (response (condition-case err
+                         (plz-get-sync url :as 'response)
+                       (plz-http-error (plz-error-response (cdr err))))))
       (pcase (plz-response-status response)
         (404 (fail-prompt))
         (200 (parse (plz-response-body response)))

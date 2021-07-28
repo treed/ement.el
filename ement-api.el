@@ -43,6 +43,7 @@
 
 ;;;; Variables
 
+(defvar ement-insecure)
 
 ;;;; Customization
 
@@ -67,7 +68,10 @@
                (url (url-recreate-url
 		     (url-parse-make-urlobj type nil nil host port filename nil data t)))
                (headers (ement-alist "Content-Type" content-type
-                                     "Authorization" (concat "Bearer " token))))
+                                     "Authorization" (concat "Bearer " token)))
+               (plz-curl-default-args (if ement-insecure
+                                          (cons "--insecure" plz-curl-default-args)
+                                        plz-curl-default-args)))
     ;; Omit `then' from debugging because if it's a partially applied
     ;; function on the session object, which may be very large, it
     ;; will take a very long time to print into the warnings buffer.
