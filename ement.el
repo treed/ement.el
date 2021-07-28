@@ -129,6 +129,13 @@ self-signed, untrusted certificate.  (Normally this option should
 not be used, of course.)"
   :type 'boolean)
 
+(defcustom ement-protocol "https"
+  "Protocol used to connect to the Matrix server.
+When using a non-HTTPS server (e.g. when using Pantalaimon
+locally), it may be necessary to switch to HTTP."
+  :type '(choice (const :tag "HTTPS" "https")
+                 (const :tag "HTTP" "http")))
+
 ;;;; Commands
 
 ;;;###autoload
@@ -264,7 +271,7 @@ use it, otherwise the default."
                                       (cons "--insecure" plz-curl-default-args)
                                     plz-curl-default-args))
            (url (url-recreate-url
-                 (url-parse-make-urlobj "https" nil nil hostname port "/.well-known/matrix/client" nil nil t)))
+                 (url-parse-make-urlobj ement-protocol nil nil hostname port "/.well-known/matrix/client" nil nil t)))
            (response (condition-case err
                          (plz-get-sync url :as 'response)
                        (plz-http-error (plz-error-response (cdr err))))))
