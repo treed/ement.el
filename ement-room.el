@@ -293,7 +293,7 @@ Note that margin sizes must be set manually with
          (when ement-room-sender-in-left-margin
            ;; HACK: Disable overline on sender face.
            (set-face-attribute 'ement-room-user nil :overline nil))
-         (when (and (bound-and-true-p ement-sessions) (car ement-sessions))
+         (when (and (bound-and-true-p ement-sessions) ement-sessions)
            ;; Only display when a session is connected (not sure why `bound-and-true-p'
            ;; is required to avoid compilation warnings).
            (message "Ement: Kill and reopen room buffers to display in new format")))
@@ -440,17 +440,17 @@ sends a not-typing notification."
 
 (defun ement-room-bookmark-handler (bookmark)
   "Show Ement room buffer for BOOKMARK."
-  (pcase-let* ((`(,_name . ,(map session-id room-id)) bookmark))
-    (unless (cl-loop for session in ement-sessions
-                     thereis (equal session-id (ement-user-id (ement-session-user session))))
-      ;; MAYBE: Automatically connect.
-      (user-error "Session %s not connected: call `ement-connect' first" session-id))
-    ;; FIXME: Support multiple sessions.
-    (let ((room (cl-loop for room in (ement-session-rooms (car ement-sessions))
-                         when (equal room-id (ement-room-id room))
-                         return room)))
-      (cl-assert room)
-      (ement-view-room (car ement-sessions) room))))
+  (pcase-let* ((`(,_name . ,(map session-id room-id)) bookmark)
+               (session (ement-aprog1
+                            (alist-get session-id ement-sessions nil nil #'equal)
+                          (unless it
+                            ;; MAYBE: Automatically connect.
+                            (user-error "Session %s not connected: call `ement-connect' first" session-id))))
+               (room (ement-aprog1
+                         (ement-afirst (equal room-id (ement-room-id it))
+                           (ement-session-rooms session))
+                       (cl-assert it nil "Room %S not found on session %S" room-id session-id))))
+    (ement-view-room session room)))
 
 ;;;; Commands
 
